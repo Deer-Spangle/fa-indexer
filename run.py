@@ -61,5 +61,14 @@ def scrape(start=1, increment=100):
         index = end + 1
 
 
+def find_latest_downloaded_id():
+    dir_1 = str(max(int(x) for x in os.listdir("data/"))).zfill(2)
+    dir_2 = str(max(int(x) for x in os.listdir(f"data/{dir_1}/"))).zfill(2)
+    files = os.listdir(f"data/{dir_1}/{dir_2}/")
+    largest_id = max([int(x.split("-")[-1].split(".")[0]) for x in files])
+    return largest_id
+
+
 if __name__ == "__main__":
-    scrape(201)
+    largest_id = find_latest_downloaded_id()
+    scrape(largest_id)
