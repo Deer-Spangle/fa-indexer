@@ -1,10 +1,12 @@
 import json
 import os
+from multiprocessing.dummy import Pool as ThreadPool
 
 import requests
 
 with open("config.json", "r") as f:
     config = json.load(f)
+pool = ThreadPool(8)
 
 
 def download_entry(sub_id):
@@ -45,9 +47,10 @@ def save_batch(start_id, end_id, full_data):
 
 def scrape_batch(start, end):
     full_data = dict()
-    for sub_id in range(start, end+1):
-        entry = download_entry(sub_id)
-        full_data[str(sub_id)] = entry
+    id_range = list(range(start, end+1))
+    results = pool.map(download_entry, id_range)
+    for result_key in range(len(results)):
+        full_data[str(start+result_key)] = results[result_key]
     save_batch(start, end, full_data)
 
 
