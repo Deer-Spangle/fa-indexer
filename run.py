@@ -17,12 +17,25 @@ def download_entry(sub_id):
     return entry
 
 
+def make_url(path, number):
+    api_url = config['API_URL']
+    if isinstance(config['API_URL'], list):
+        options = len(config['API_URL'])
+        api_url = config['API_URL'][number % options]
+    url = api_url + path
+    return url
+
+
 def download_sub_data(sub_id):
-    return download_json(f"{config['API_URL']}/submission/{sub_id}.json")
+    path = f"/submission/{sub_id}.json"
+    url = make_url(path, sub_id)
+    return download_json(url)
 
 
 def download_comment_data(sub_id):
-    return download_json(f"{config['API_URL']}/submission/{sub_id}/comments.json")
+    path = f"/submission/{sub_id}/comments.json"
+    url = make_url(path, sub_id)
+    return download_json(url)
 
 
 def download_json(url):
