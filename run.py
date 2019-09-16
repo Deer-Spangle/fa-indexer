@@ -263,6 +263,7 @@ class Scraper:
                 "lock": RLock()
             }
         }
+        self.old_files = glob.glob("old_data/**/*.json", recursive=True)
 
     def get_file_data(self, file_key: str, filename_wanted):
         file_entry = self.latest_file[file_key]
@@ -282,8 +283,7 @@ class Scraper:
         return data
 
     def check_old_data(self, sub_id: int) -> Union[bool, dict]:
-        old_files = glob.glob("old_data/**/*.json", recursive=True)
-        ranges = [[int(x.split(os.sep)[-1].split(".")[0].split("-")[y]) for y in [1, 2]] + [x] for x in old_files]
+        ranges = [[int(x.split(os.sep)[-1].split(".")[0].split("-")[y]) for y in [1, 2]] + [x] for x in self.old_files]
         for file in ranges:
             if file[0] <= sub_id <= file[1]:
                 old_data = self.get_file_data("old_data", file[2])
