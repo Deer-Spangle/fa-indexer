@@ -4,6 +4,7 @@ import re
 import time
 from abc import ABC
 from multiprocessing.dummy import Pool as ThreadPool
+from threading import RLock
 from typing import Union, List, Optional
 import dateutil.parser as parser
 from bs4 import BeautifulSoup
@@ -250,25 +251,52 @@ class Scraper:
         self.config = config
         self.pool = ThreadPool(8)
         self.slow_down = False
+        self.latest_file = {
+            "old_data": {
+                "filename": None,
+                "data": None,
+                "lock": RLock()
+            },
+            "batch_file": {
+                "filename": None,
+                "data": None,
+                "lock": RLock()
+            }
+        }
+
+    def get_file_data(self, file_key: str, filename_wanted):
+        file_entry = self.latest_file[file_key]
+        if file_entry["filename"] == filename_wanted:
+            return file_entry["data"]
+        with self.latest_file[file_key]["lock"]:
+            # Read new file
+            with open(filename_wanted, "r") as dump:
+                data = json.load(dump)
+            # Set variables
+            new_obj = {
+                "filename": filename_wanted,
+                "handle": data,
+                "lock": self.latest_file[file_key]["lock"]
+            }
+            self.latest_file[file_key] = new_obj
+        return data
 
     def check_old_data(self, sub_id: int) -> Union[bool, dict]:
         old_files = glob.glob("old_data/**/*.json", recursive=True)
         ranges = [[int(x.split(os.sep)[-1].split(".")[0].split("-")[y]) for y in [1, 2]] + [x] for x in old_files]
         for file in ranges:
             if file[0] <= sub_id <= file[1]:
-                with open(file[2], "r") as old_dump:
-                    old_data = json.load(old_dump)
-                    if str(sub_id) in old_data:
-                        return old_data[str(sub_id)]
+                old_data = self.get_file_data("old_data", file[2])
+                if str(sub_id) in old_data:
+                    return old_data[str(sub_id)]
         return False
 
     def already_exists(self, sub_id) -> Union[bool, Optional[dict]]:
         directory, filename = self.filename_for_id(sub_id)
         if os.path.exists(directory + filename):
-            with open(directory + filename, "r") as batch_file:
-                data = json.load(batch_file)
-                if str(sub_id) in data:
-                    return data[str(sub_id)]
+            data = self.get_file_data("batch_file", directory + filename)
+            if str(sub_id) in data:
+                return data[str(sub_id)]
         return False
 
     def in_archive(self, sub_id) -> Union[bool, str]:
