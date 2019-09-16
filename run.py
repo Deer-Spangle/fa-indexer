@@ -54,7 +54,7 @@ class PageGetter(ABC):
     def result(self) -> Optional[PageResult]:
         raise NotImplementedError()
 
-    def should_slow_down(self):
+    def should_slow_down(self) -> Optional[bool]:
         return False
 
 
@@ -80,6 +80,7 @@ class WebsiteDownloader(PageGetter):
         soup = BeautifulSoup(html, "html.parser")
         main_table = soup.select_one('div#page-submission table.maintable table.maintable')
         if main_table is None:
+            self.over_10k_registered = None
             return None
 
         title_bar = main_table.select_one('.classic-submission-title.container')
@@ -336,7 +337,9 @@ class Scraper:
         downloader = self.pick_downloader(sub_id)
         print(f"Picked: {downloader.__class__.__name__}")
         result = downloader.result()
-        self.slow_down = downloader.should_slow_down()
+        slow_down = downloader.should_slow_down()
+        if slow_down is not None:
+            self.slow_down = slow_down
         return None if result is None else result.to_dict()
 
     def make_directories(self, directory):
