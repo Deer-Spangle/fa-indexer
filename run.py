@@ -147,14 +147,33 @@ class OldDataUpdater(PageGetter):
         )
 
 
+class DataMerger(PageGetter):
+    def __init__(self, sub_id, data):
+        self.sub_id = sub_id
+        self.data = data
+
+    def result(self) -> PageResult:
+        return PageResult(
+            self.sub_id,
+            self.data['username'],
+            self.data['title'],
+            self.data['description'],
+            self.data['keywords'],
+            self.data['date'],
+            self.data['rating'],
+            self.data['filename']
+        )
+
+
 class Scraper:
     def __init__(self, start, end=None):
         self.start = start
         self.end = end
+        self.batch_size = 100
 
     def check_old_data(self, sub_id: int):
         old_files = glob.glob("old_data/**/*.json", recursive=True)
-        ranges = [[int(x.split(os.sep)[-1].split(".")[0].split("-")[y]) for y in [1,2]] + [x] for x in old_files]
+        ranges = [[int(x.split(os.sep)[-1].split(".")[0].split("-")[y]) for y in [1, 2]] + [x] for x in old_files]
         for file in ranges:
             if file[0] <= sub_id <= file[1]:
                 with open(file[3], "r") as old_dump:
@@ -163,24 +182,43 @@ class Scraper:
                         return old_data[sub_id]
         return None
 
+    def already_exists(self, sub_id):
+        directory, filename = self.filename_for_id(sub_id)
+        if os.path.exists(directory + filename):
+            with open(directory + filename, "r") as batch_file:
+                data = json.load(batch_file)
+                if str(sub_id) in data:
+                    return data[sub_id]
+        return None
+
     def download_entry(self, sub_id):
-        old_data = self.check_old_data(sub_id)
-        if old_data is not None:
-            downloader = OldDataUpdater(sub_id, old_data)
-        elif 'API_URL' in config:
-            downloader = APIDownloader(sub_id, config['API_URL'])
-        elif 'LOGIN_COOKIE' in config:
-            downloader = WebsiteDownloader(sub_id, config['LOGIN_COOKIE'])
+        batch_data = self.already_exists(sub_id)
+        if batch_data is not None:
+            downloader = DataMerger(sub_id, batch_data)
         else:
-            raise Exception("Please set API_URL or LOGIN_COOKIE in config")
-        return downloader.result()
+            old_data = self.check_old_data(sub_id)
+            if old_data is not None:
+                downloader = OldDataUpdater(sub_id, old_data)
+            elif 'API_URL' in config:
+                downloader = APIDownloader(sub_id, config['API_URL'])
+            elif 'LOGIN_COOKIE' in config:
+                downloader = WebsiteDownloader(sub_id, config['LOGIN_COOKIE'])
+            else:
+                raise Exception("Please set API_URL or LOGIN_COOKIE in config")
+        return downloader.result().to_dict()
 
     def make_directories(self, directory):
         os.makedirs(os.path.dirname(directory), exist_ok=True)
 
-    def save_batch(self, start_id, end_id, full_data):
-        filename = f"batch-{start_id:08}-{end_id:08}.json"
-        directory = f"data/{start_id//1000000:02}/{start_id%1000000//10000:02}/"
+    def filename_for_id(self, sub_id):
+        batch_start = (sub_id // self.batch_size) * self.batch_size
+        batch_end = batch_start + self.batch_size
+        filename = f"batch-{batch_start:08}-{batch_end:08}.json"
+        directory = f"data/{batch_start//1000000:02}/{batch_start%1000000//10000:02}/"
+        return directory, filename
+
+    def save_batch(self, start_id, full_data):
+        directory, filename = self.filename_for_id(start_id)
         self.make_directories(directory)
         with open(directory + filename, "w+") as dump_file:
             json.dump(full_data, dump_file)
@@ -191,16 +229,17 @@ class Scraper:
         results = pool.map(self.download_entry, id_range)
         for result_key in range(len(results)):
             full_data[str(start+result_key)] = results[result_key]
-        self.save_batch(start, end, full_data)
+        self.save_batch(start, full_data)
 
-    def scrape(self, start=1, increment=100):
-        index = start
-        while True:
-            end = index + increment - 1
-            print(f"START BATCH: {index} - {end}")
-            self.scrape_batch(index, end)
-            print(f"END BATCH: {index} - {end}")
-            index = end + 1
+    def scrape(self, start=1, end=None):
+        batch_start = (start // self.batch_size) * self.batch_size
+        batch_end = batch_start + self.batch_size - 1
+        while (end is None) or (batch_start < end):
+            print(f"START BATCH: {batch_start} - {batch_end}")
+            self.scrape_batch(batch_start, batch_end)
+            print(f"END BATCH: {batch_start} - {batch_end}")
+            batch_start = batch_end + 1
+            batch_end = batch_start + self.batch_size - 1
 
 
 def find_latest_downloaded_id():
