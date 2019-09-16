@@ -331,7 +331,8 @@ class Scraper:
 
     def download_entry(self, sub_id):
         if self.slow_down:
-            time.sleep(100)
+            print("Waiting")
+            time.sleep(4)
         downloader = self.pick_downloader(sub_id)
         print(f"Picked: {downloader.__class__.__name__}")
         result = downloader.result()
