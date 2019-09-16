@@ -1,6 +1,10 @@
 import json
 import os
+from abc import ABC
 from multiprocessing.dummy import Pool as ThreadPool
+from typing import Union, List
+import dateutil.parser as parser
+from bs4 import BeautifulSoup
 
 import requests
 
@@ -9,25 +13,96 @@ with open("config.json", "r") as f:
 pool = ThreadPool(8)
 
 
-class Downloader:
-    def __init__(self, sub_id):
+class PageResult:
+    def __init__(
+            self,
+            sub_id: int,
+            username: str,
+            title: str,
+            description: str,
+            keywords: List[str],
+            date: str,
+            rating: str,
+            filename: str
+    ):
         self.sub_id = sub_id
+        self.username = username
+        self.title = title
+        self.description = description
+        self.keywords = keywords
+        self.date = date
+        self.rating = rating
+        self.filename = filename
+
+    def to_dict(self):
+        return {
+            "id": self.sub_id,
+            "username": self.username,
+            "title": self.title,
+            "description": self.description,
+            "keywords": self.keywords,
+            "date": self.date,
+            "rating": self.rating,
+            "filename": self.filename
+        }
+
+
+class PageGetter(ABC):
+    def result(self) -> PageResult:
+        raise NotImplementedError()
+
+
+class WebsiteDownloader(PageGetter):
+    def __init__(self, sub_id: int, login_cookie: dict):
+        self.sub_id = sub_id
+        self.login_cookie = login_cookie
+
+    def download_page(self):
+        return requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie)
+
+    def result(self):
+        html = self.download_page()
+        soup = BeautifulSoup(html)
+        main_table = soup.select_one('div#page-submission table.maintable table.maintable')
+        title_bar = main_table.select_one('.classic-submission-title.container')
+        stats_container = main_table.select_one('td.alt1.stats-container')
+        actions_bar = soup.select_one('#page-submission div.actions')
+
+        username = title_bar.select_one('.information a')['href'].split("/")[-1].strip("/").split("/")[-1]
+        title = title_bar.select_one('h2').contents
+        description = main_table.select('>tbody>tr')[-1].select_one('td').contents.strip()
+        keywords = [x.contents for x in stats_container.select('div#keywords a')]
+        date = parser.parse(stats_container.select_one('.popup_date')['title']).isoformat()
+        rating = stats_container.at_css('img')['alt'].replace(' rating', '')
+        filename = "https:" + [x['href'] for x in actions_bar if x.contents == "Download"][0]
+
+        return PageResult(
+            self.sub_id,
+            username,
+            title,
+            description,
+            keywords,
+            date,
+            rating,
+            filename
+        )
+
+
+class APIDownloader(PageGetter):
+    def __init__(self, sub_id: int, api_url: Union[str, List[str]]):
+        self.sub_id = sub_id
+        self.api_url = api_url
 
     def make_url(self, path):
-        api_url = config['API_URL']
-        if isinstance(config['API_URL'], list):
-            options = len(config['API_URL'])
-            api_url = config['API_URL'][self.sub_id % options]
+        api_url = self.api_url
+        if isinstance(self.api_url, list):
+            options = len(self.api_url)
+            api_url = self.api_url[self.sub_id % options]
         url = api_url + path
         return url
 
     def download_sub_data(self):
         path = f"/submission/{self.sub_id}.json"
-        url = self.make_url(path)
-        return self.download_json(url)
-
-    def download_comment_data(self):
-        path = f"/submission/{self.sub_id}/comments.json"
         url = self.make_url(path)
         return self.download_json(url)
 
@@ -40,10 +115,17 @@ class Downloader:
 
     def result(self):
         print(f"Downloading: {self.sub_id}")
-        entry = dict()
-        entry['data'] = self.download_sub_data()
-        entry['comments'] = self.download_comment_data()
-        return entry
+        data = self.download_sub_data()
+        return PageResult(
+            self.sub_id,
+            data['profile_name'],
+            data['title'],
+            data['description'],
+            data['keywords'],
+            data['posted_at'],
+            data['rating'],
+            data['download']
+        )
 
 
 class Scraper:
@@ -52,7 +134,7 @@ class Scraper:
         self.end = end
 
     def download_entry(self, sub_id):
-        downloader = Downloader(sub_id)
+        downloader = APIDownloader(sub_id, config['API_URL'])
         return downloader.result()
 
     def make_directories(self, directory):
