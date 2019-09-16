@@ -5,6 +5,7 @@ from multiprocessing.dummy import Pool as ThreadPool
 from typing import Union, List
 import dateutil.parser as parser
 from bs4 import BeautifulSoup
+import glob
 
 import requests
 
@@ -60,7 +61,7 @@ class WebsiteDownloader(PageGetter):
     def download_page(self):
         return requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie)
 
-    def result(self):
+    def result(self) -> PageResult:
         html = self.download_page()
         soup = BeautifulSoup(html)
         main_table = soup.select_one('div#page-submission table.maintable table.maintable')
@@ -113,7 +114,7 @@ class APIDownloader(PageGetter):
         data = resp.json()
         return data
 
-    def result(self):
+    def result(self) -> PageResult:
         print(f"Downloading: {self.sub_id}")
         data = self.download_sub_data()
         return PageResult(
@@ -128,13 +129,50 @@ class APIDownloader(PageGetter):
         )
 
 
+class OldDataUpdater(PageGetter):
+    def __init__(self, sub_id, old_data):
+        self.sub_id = sub_id
+        self.old_data = old_data
+
+    def result(self) -> PageResult:
+        return PageResult(
+            self.sub_id,
+            self.old_data['data']['profile_name'],
+            self.old_data['data']['title'],
+            self.old_data['data']['description'],
+            self.old_data['data']['keywords'],
+            self.old_data['data']['posted_at'],
+            self.old_data['data']['rating'],
+            self.old_data['data']['download']
+        )
+
+
 class Scraper:
     def __init__(self, start, end=None):
         self.start = start
         self.end = end
 
+    def check_old_data(self, sub_id: int):
+        old_files = glob.glob("old_data/**/*.json", recursive=True)
+        ranges = [[int(x.split(os.sep)[-1].split(".")[0].split("-")[y]) for y in [1,2]] + [x] for x in old_files]
+        for file in ranges:
+            if file[0] <= sub_id <= file[1]:
+                with open(file[3], "r") as old_dump:
+                    old_data = json.load(old_dump)
+                    if str(sub_id) in old_data:
+                        return old_data[sub_id]
+        return None
+
     def download_entry(self, sub_id):
-        downloader = APIDownloader(sub_id, config['API_URL'])
+        old_data = self.check_old_data(sub_id)
+        if old_data is not None:
+            downloader = OldDataUpdater(sub_id, old_data)
+        elif 'API_URL' in config:
+            downloader = APIDownloader(sub_id, config['API_URL'])
+        elif 'LOGIN_COOKIE' in config:
+            downloader = WebsiteDownloader(sub_id, config['LOGIN_COOKIE'])
+        else:
+            raise Exception("Please set API_URL or LOGIN_COOKIE in config")
         return downloader.result()
 
     def make_directories(self, directory):
