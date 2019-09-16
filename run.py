@@ -175,9 +175,7 @@ class DataMerger(PageGetter):
 
 
 class Scraper:
-    def __init__(self, start, end=None):
-        self.start = start
-        self.end = end
+    def __init__(self):
         self.batch_size = 100
 
     def check_old_data(self, sub_id: int):
@@ -191,18 +189,18 @@ class Scraper:
                         return old_data[str(sub_id)]
         return None
 
-    def already_exists(self, sub_id):
+    def already_exists(self, sub_id) -> Union[bool, Optional[dict]]:
         directory, filename = self.filename_for_id(sub_id)
         if os.path.exists(directory + filename):
             with open(directory + filename, "r") as batch_file:
                 data = json.load(batch_file)
                 if str(sub_id) in data:
                     return data[str(sub_id)]
-        return None
+        return False
 
     def download_entry(self, sub_id):
         batch_data = self.already_exists(sub_id)
-        if batch_data is not None:
+        if batch_data is not False:
             downloader = DataMerger(sub_id, batch_data)
         else:
             old_data = self.check_old_data(sub_id)
@@ -237,7 +235,8 @@ class Scraper:
     def scrape_batch(self, start, end):
         full_data = dict()
         id_range = list(range(start, end+1))
-        results = pool.map(self.download_entry, id_range)
+        #results = pool.map(self.download_entry, id_range)
+        results = [self.download_entry(x) for x in id_range]
         for result_key in range(len(results)):
             full_data[str(start+result_key)] = results[result_key]
         self.save_batch(start, full_data)
@@ -262,6 +261,5 @@ def find_latest_downloaded_id():
 
 
 if __name__ == "__main__":
-    # latest_id = find_latest_downloaded_id()
-    scraper = Scraper(1, 200)
-    scraper.scrape()
+    scraper = Scraper()
+    scraper.scrape(1, 200)
