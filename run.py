@@ -275,7 +275,7 @@ class Scraper:
             # Set variables
             new_obj = {
                 "filename": filename_wanted,
-                "handle": data,
+                "data": data,
                 "lock": self.latest_file[file_key]["lock"]
             }
             self.latest_file[file_key] = new_obj
