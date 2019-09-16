@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import time
 from abc import ABC
 from multiprocessing.dummy import Pool as ThreadPool
 from typing import Union, List, Optional
@@ -8,10 +10,6 @@ from bs4 import BeautifulSoup
 import glob
 
 import requests
-
-with open("config.json", "r") as f:
-    config = json.load(f)
-pool = ThreadPool(8)
 
 
 class PageResult:
@@ -55,14 +53,26 @@ class PageGetter(ABC):
     def result(self) -> Optional[PageResult]:
         raise NotImplementedError()
 
+    def should_slow_down(self):
+        return False
+
 
 class WebsiteDownloader(PageGetter):
     def __init__(self, sub_id: int, login_cookie: dict):
         self.sub_id = sub_id
         self.login_cookie = login_cookie
+        self.over_10k_registered = False
 
     def download_page(self):
         return requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie).content
+
+    def read_status(self, soup):
+        footer = soup.select_one(".footer center").decode_contents()
+        reg_users = re.search(r"([0-9]+)\s*<b>registered", footer, re.I)
+        if reg_users is not None:
+            reg_count = int(reg_users.group(1))
+            if reg_count > 10000:
+                self.over_10k_registered = True
 
     def result(self) -> Optional[PageResult]:
         html = self.download_page()
@@ -83,6 +93,8 @@ class WebsiteDownloader(PageGetter):
         rating = stats_container.select_one('img')['alt'].replace(' rating', '')
         filename = "https:" + [x['href'] for x in actions_bar.select('a') if x.text == "Download"][0]
 
+        self.read_status(soup)
+
         return PageResult(
             self.sub_id,
             username,
@@ -94,11 +106,15 @@ class WebsiteDownloader(PageGetter):
             filename
         )
 
+    def should_slow_down(self):
+        return self.over_10k_registered
+
 
 class APIDownloader(PageGetter):
     def __init__(self, sub_id: int, api_url: Union[str, List[str]]):
         self.sub_id = sub_id
         self.api_url = api_url
+        self.over_10k_registered = False
 
     def make_url(self, path):
         api_url = self.api_url
@@ -120,9 +136,19 @@ class APIDownloader(PageGetter):
         data = resp.json()
         return data
 
+    def download_status(self):
+        path = f"/status.json"
+        url = self.make_url(path)
+        return self.download_json(url)
+
     def result(self) -> Optional[PageResult]:
         print(f"Downloading: {self.sub_id}")
         data = self.download_sub_data()
+
+        status = self.download_status()
+        if status['online']['registered'] > 10000:
+            self.over_10k_registered = True
+
         if data is None:
             return None
         return PageResult(
@@ -135,6 +161,9 @@ class APIDownloader(PageGetter):
             data['rating'],
             data['download']
         )
+
+    def should_slow_down(self):
+        return self.over_10k_registered
 
 
 class OldDataUpdater(PageGetter):
@@ -216,8 +245,11 @@ class ArchiveTeamReader(PageGetter):
 
 
 class Scraper:
-    def __init__(self):
+    def __init__(self, config):
         self.batch_size = 100
+        self.config = config
+        self.pool = ThreadPool(8)
+        self.slow_down = False
 
     def check_old_data(self, sub_id: int) -> Union[bool, dict]:
         old_files = glob.glob("old_data/**/*.json", recursive=True)
@@ -259,17 +291,20 @@ class Scraper:
         archive_file = self.in_archive(sub_id)
         if archive_file is not False:
             return ArchiveTeamReader(sub_id, archive_file)
-        elif 'API_URL' in config:
-            return APIDownloader(sub_id, config['API_URL'])
-        elif 'LOGIN_COOKIE' in config:
-            return WebsiteDownloader(sub_id, config['LOGIN_COOKIE'])
+        elif 'API_URL' in self.config:
+            return APIDownloader(sub_id, self.config['API_URL'])
+        elif 'LOGIN_COOKIE' in self.config:
+            return WebsiteDownloader(sub_id, self.config['LOGIN_COOKIE'])
         else:
             raise Exception("Please set API_URL or LOGIN_COOKIE in config")
 
     def download_entry(self, sub_id):
+        if self.slow_down:
+            time.sleep(100)
         downloader = self.pick_downloader(sub_id)
         print(f"Picked: {downloader.__class__.__name__}")
         result = downloader.result()
+        self.slow_down = downloader.should_slow_down()
         return None if result is None else result.to_dict()
 
     def make_directories(self, directory):
@@ -291,8 +326,7 @@ class Scraper:
     def scrape_batch(self, start, end):
         full_data = dict()
         id_range = list(range(start, end+1))
-        # results = pool.map(self.download_entry, id_range)
-        results = [self.download_entry(x) for x in id_range]
+        results = self.pool.map(self.download_entry, id_range)
         for result_key in range(len(results)):
             full_data[str(start+result_key)] = results[result_key]
         self.save_batch(start, full_data)
@@ -317,5 +351,7 @@ def find_latest_downloaded_id():
 
 
 if __name__ == "__main__":
-    scraper = Scraper()
+    with open("config.json", "r") as f:
+        conf = json.load(f)
+    scraper = Scraper(conf)
     scraper.scrape(1, 200)
