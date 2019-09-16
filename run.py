@@ -354,4 +354,4 @@ if __name__ == "__main__":
     with open("config.json", "r") as f:
         conf = json.load(f)
     scraper = Scraper(conf)
-    scraper.scrape(1, 200)
+    scraper.scrape(conf['START'], conf['END'])
