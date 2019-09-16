@@ -2,7 +2,7 @@ import json
 import os
 from abc import ABC
 from multiprocessing.dummy import Pool as ThreadPool
-from typing import Union, List
+from typing import Union, List, Optional
 import dateutil.parser as parser
 from bs4 import BeautifulSoup
 import glob
@@ -49,7 +49,7 @@ class PageResult:
 
 
 class PageGetter(ABC):
-    def result(self) -> PageResult:
+    def result(self) -> Optional[PageResult]:
         raise NotImplementedError()
 
 
@@ -61,10 +61,13 @@ class WebsiteDownloader(PageGetter):
     def download_page(self):
         return requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie)
 
-    def result(self) -> PageResult:
+    def result(self) -> Optional[PageResult]:
         html = self.download_page()
         soup = BeautifulSoup(html)
         main_table = soup.select_one('div#page-submission table.maintable table.maintable')
+        if main_table is None:
+            return None
+
         title_bar = main_table.select_one('.classic-submission-title.container')
         stats_container = main_table.select_one('td.alt1.stats-container')
         actions_bar = soup.select_one('#page-submission div.actions')
@@ -110,13 +113,15 @@ class APIDownloader(PageGetter):
     def download_json(self, url):
         resp = requests.get(url)
         if resp.status_code != 200:
-            return {}
+            return None
         data = resp.json()
         return data
 
-    def result(self) -> PageResult:
+    def result(self) -> Optional[PageResult]:
         print(f"Downloading: {self.sub_id}")
         data = self.download_sub_data()
+        if data is None:
+            return None
         return PageResult(
             self.sub_id,
             data['profile_name'],
@@ -134,7 +139,9 @@ class OldDataUpdater(PageGetter):
         self.sub_id = sub_id
         self.old_data = old_data
 
-    def result(self) -> PageResult:
+    def result(self) -> Optional[PageResult]:
+        if self.old_data['data'] == {}:
+            return None
         return PageResult(
             self.sub_id,
             self.old_data['data']['profile_name'],
@@ -152,7 +159,9 @@ class DataMerger(PageGetter):
         self.sub_id = sub_id
         self.data = data
 
-    def result(self) -> PageResult:
+    def result(self) -> Optional[PageResult]:
+        if self.data is None:
+            return None
         return PageResult(
             self.sub_id,
             self.data['username'],
@@ -176,10 +185,10 @@ class Scraper:
         ranges = [[int(x.split(os.sep)[-1].split(".")[0].split("-")[y]) for y in [1, 2]] + [x] for x in old_files]
         for file in ranges:
             if file[0] <= sub_id <= file[1]:
-                with open(file[3], "r") as old_dump:
+                with open(file[2], "r") as old_dump:
                     old_data = json.load(old_dump)
                     if str(sub_id) in old_data:
-                        return old_data[sub_id]
+                        return old_data[str(sub_id)]
         return None
 
     def already_exists(self, sub_id):
@@ -188,7 +197,7 @@ class Scraper:
             with open(directory + filename, "r") as batch_file:
                 data = json.load(batch_file)
                 if str(sub_id) in data:
-                    return data[sub_id]
+                    return data[str(sub_id)]
         return None
 
     def download_entry(self, sub_id):
@@ -205,7 +214,9 @@ class Scraper:
                 downloader = WebsiteDownloader(sub_id, config['LOGIN_COOKIE'])
             else:
                 raise Exception("Please set API_URL or LOGIN_COOKIE in config")
-        return downloader.result().to_dict()
+        print(f"Picked: {downloader.__class__.__name__}")
+        result = downloader.result()
+        return None if result is None else result.to_dict()
 
     def make_directories(self, directory):
         os.makedirs(os.path.dirname(directory), exist_ok=True)
@@ -251,6 +262,6 @@ def find_latest_downloaded_id():
 
 
 if __name__ == "__main__":
-    latest_id = find_latest_downloaded_id()
-    scraper = Scraper(latest_id)
+    # latest_id = find_latest_downloaded_id()
+    scraper = Scraper(1, 200)
     scraper.scrape()
