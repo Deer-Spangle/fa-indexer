@@ -174,11 +174,48 @@ class DataMerger(PageGetter):
         )
 
 
+class ArchiveTeamReader(PageGetter):
+    def __init__(self, sub_id, file_name):
+        self.sub_id = sub_id
+        self.file_name = file_name
+
+    def result(self) -> Optional[PageResult]:
+        with open(self.file_name, "r") as archive_file:
+            html = archive_file.read()
+        soup = BeautifulSoup(html)
+        main_table = soup.select_one('div#page-submission table.maintable table.maintable')
+        if main_table is None:
+            return None
+
+        title_bar = main_table.select_one('.classic-submission-title.container')
+        stats_container = main_table.select_one('td.alt1.stats-container')
+        actions_bar = soup.select_one('#page-submission div.actions')
+
+        username = title_bar.select_one('.information a')['href'].split("/")[-1].strip("/").split("/")[-1]
+        title = title_bar.select_one('h2').contents
+        description = main_table.select('>tbody>tr')[-1].select_one('td').contents.strip()
+        keywords = [x.contents for x in stats_container.select('div#keywords a')]
+        date = parser.parse(stats_container.select_one('.popup_date')['title']).isoformat()
+        rating = stats_container.at_css('img')['alt'].replace(' rating', '')
+        filename = "https:" + [x['href'] for x in actions_bar if x.contents == "Download"][0]
+
+        return PageResult(
+            self.sub_id,
+            username,
+            title,
+            description,
+            keywords,
+            date,
+            rating,
+            filename
+        )
+
+
 class Scraper:
     def __init__(self):
         self.batch_size = 100
 
-    def check_old_data(self, sub_id: int):
+    def check_old_data(self, sub_id: int) -> Union[bool, dict]:
         old_files = glob.glob("old_data/**/*.json", recursive=True)
         ranges = [[int(x.split(os.sep)[-1].split(".")[0].split("-")[y]) for y in [1, 2]] + [x] for x in old_files]
         for file in ranges:
@@ -187,7 +224,7 @@ class Scraper:
                     old_data = json.load(old_dump)
                     if str(sub_id) in old_data:
                         return old_data[str(sub_id)]
-        return None
+        return False
 
     def already_exists(self, sub_id) -> Union[bool, Optional[dict]]:
         directory, filename = self.filename_for_id(sub_id)
@@ -198,20 +235,35 @@ class Scraper:
                     return data[str(sub_id)]
         return False
 
-    def download_entry(self, sub_id):
+    def in_archive(self, sub_id) -> Union[bool, str]:
+        dir_name = f"fa-extract/www.furaffinity.net/view/{sub_id}/"
+        file_name = glob.glob(f"{dir_name}*")
+        if len(file_name) == 0:
+            return False
+        return file_name[0]
+
+    def pick_downloader(self, sub_id):
+        # Check if already got the data
         batch_data = self.already_exists(sub_id)
         if batch_data is not False:
-            downloader = DataMerger(sub_id, batch_data)
+            return DataMerger(sub_id, batch_data)
+        # Check if data is in old format
+        old_data = self.check_old_data(sub_id)
+        if old_data is not False:
+            return OldDataUpdater(sub_id, old_data)
+        # Check if data is in archive team data
+        archive_file = self.in_archive(sub_id)
+        if archive_file is not False:
+            return ArchiveTeamReader(sub_id, archive_file)
+        elif 'API_URL' in config:
+            return APIDownloader(sub_id, config['API_URL'])
+        elif 'LOGIN_COOKIE' in config:
+            return WebsiteDownloader(sub_id, config['LOGIN_COOKIE'])
         else:
-            old_data = self.check_old_data(sub_id)
-            if old_data is not None:
-                downloader = OldDataUpdater(sub_id, old_data)
-            elif 'API_URL' in config:
-                downloader = APIDownloader(sub_id, config['API_URL'])
-            elif 'LOGIN_COOKIE' in config:
-                downloader = WebsiteDownloader(sub_id, config['LOGIN_COOKIE'])
-            else:
-                raise Exception("Please set API_URL or LOGIN_COOKIE in config")
+            raise Exception("Please set API_URL or LOGIN_COOKIE in config")
+
+    def download_entry(self, sub_id):
+        downloader = self.pick_downloader(sub_id)
         print(f"Picked: {downloader.__class__.__name__}")
         result = downloader.result()
         return None if result is None else result.to_dict()
