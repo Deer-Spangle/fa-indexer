@@ -35,6 +35,9 @@ class PageResult:
         self.rating = rating
         self.filename = filename
 
+    def __repr__(self):
+        return json.dumps(self.to_dict())
+
     def to_dict(self):
         return {
             "id": self.sub_id,
@@ -63,7 +66,7 @@ class WebsiteDownloader(PageGetter):
 
     def result(self) -> Optional[PageResult]:
         html = self.download_page()
-        soup = BeautifulSoup(html)
+        soup = BeautifulSoup(html, "html.parser")
         main_table = soup.select_one('div#page-submission table.maintable table.maintable')
         if main_table is None:
             return None
@@ -78,7 +81,7 @@ class WebsiteDownloader(PageGetter):
         keywords = [x.contents for x in stats_container.select('div#keywords a')]
         date = parser.parse(stats_container.select_one('.popup_date')['title']).isoformat()
         rating = stats_container.at_css('img')['alt'].replace(' rating', '')
-        filename = "https:" + [x['href'] for x in actions_bar if x.contents == "Download"][0]
+        filename = "https:" + [x['href'] for x in actions_bar.select('a') if x.contents == "Download"][0]
 
         return PageResult(
             self.sub_id,
@@ -182,22 +185,23 @@ class ArchiveTeamReader(PageGetter):
     def result(self) -> Optional[PageResult]:
         with open(self.file_name, "r") as archive_file:
             html = archive_file.read()
-        soup = BeautifulSoup(html)
-        main_table = soup.select_one('div#page-submission table.maintable table.maintable')
+        soup = BeautifulSoup(html, "html.parser")
+        main_table = soup.select_one('table.maintable table.maintable table.maintable')
         if main_table is None:
             return None
 
-        title_bar = main_table.select_one('.classic-submission-title.container')
-        stats_container = main_table.select_one('td.alt1.stats-container')
-        actions_bar = soup.select_one('#page-submission div.actions')
+        title_bar = main_table.select_one('td.cat')
+        stats_container = main_table.select_one('td.alt1 td.alt1')
+        actions_bar = soup.select_one('div.actions')
 
-        username = title_bar.select_one('.information a')['href'].split("/")[-1].strip("/").split("/")[-1]
-        title = title_bar.select_one('h2').contents
-        description = main_table.select('>tbody>tr')[-1].select_one('td').contents.strip()
-        keywords = [x.contents for x in stats_container.select('div#keywords a')]
-        date = parser.parse(stats_container.select_one('.popup_date')['title']).isoformat()
-        rating = stats_container.at_css('img')['alt'].replace(' rating', '')
-        filename = "https:" + [x['href'] for x in actions_bar if x.contents == "Download"][0]
+        username = title_bar.select_one('a')['href'].strip("/").split("/")[-1]
+        title = title_bar.select_one('b').text
+        description_raw = main_table.select('tr')[-1].select_one('td').decode_contents().strip()
+        description = "<br/>".join(description_raw.split("<br/>")[2:]).strip()
+        keywords = [x.text for x in stats_container.select('div#keywords a')]
+        date = parser.parse(stats_container.select_one('.popup_date').text).isoformat()
+        rating = stats_container.select_one('img')['alt'].replace(' rating', '')
+        filename = "https:" + [x['href'] for x in actions_bar.select('a') if x.text.strip() == "Download"][0]
 
         return PageResult(
             self.sub_id,
@@ -287,7 +291,7 @@ class Scraper:
     def scrape_batch(self, start, end):
         full_data = dict()
         id_range = list(range(start, end+1))
-        #results = pool.map(self.download_entry, id_range)
+        # results = pool.map(self.download_entry, id_range)
         results = [self.download_entry(x) for x in id_range]
         for result_key in range(len(results)):
             full_data[str(start+result_key)] = results[result_key]
