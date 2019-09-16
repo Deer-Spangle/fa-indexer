@@ -62,7 +62,7 @@ class WebsiteDownloader(PageGetter):
         self.login_cookie = login_cookie
 
     def download_page(self):
-        return requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie)
+        return requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie).content
 
     def result(self) -> Optional[PageResult]:
         html = self.download_page()
@@ -75,13 +75,13 @@ class WebsiteDownloader(PageGetter):
         stats_container = main_table.select_one('td.alt1.stats-container')
         actions_bar = soup.select_one('#page-submission div.actions')
 
-        username = title_bar.select_one('.information a')['href'].split("/")[-1].strip("/").split("/")[-1]
-        title = title_bar.select_one('h2').contents
-        description = main_table.select('>tbody>tr')[-1].select_one('td').contents.strip()
-        keywords = [x.contents for x in stats_container.select('div#keywords a')]
+        username = title_bar.select_one('.information a')['href'].strip("/").split("/")[-1]
+        title = title_bar.select_one('h2').text
+        description = main_table.select('tr')[-1].select_one('td').decode_contents().strip()
+        keywords = [x.text for x in stats_container.select('div#keywords a')]
         date = parser.parse(stats_container.select_one('.popup_date')['title']).isoformat()
-        rating = stats_container.at_css('img')['alt'].replace(' rating', '')
-        filename = "https:" + [x['href'] for x in actions_bar.select('a') if x.contents == "Download"][0]
+        rating = stats_container.select_one('img')['alt'].replace(' rating', '')
+        filename = "https:" + [x['href'] for x in actions_bar.select('a') if x.text == "Download"][0]
 
         return PageResult(
             self.sub_id,
