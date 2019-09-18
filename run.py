@@ -65,7 +65,10 @@ class WebsiteDownloader(PageGetter):
         self.over_10k_registered = False
 
     def download_page(self):
-        return requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie).content
+        resp = requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie)
+        if resp.status_code == 200:
+            return resp.content
+        raise Exception(f"Did not receive 200 response from FA. ({resp.status_code})")
 
     def read_status(self, soup):
         footer = soup.select_one(".footer center").decode_contents()
@@ -336,7 +339,13 @@ class Scraper:
             time.sleep(4)
         downloader = self.pick_downloader(sub_id)
         print(f"Picked: {downloader.__class__.__name__}")
-        result = downloader.result()
+        while True:
+            try:
+                result = downloader.result()
+                break
+            except Exception as e:
+                print(e)
+                time.sleep(10)
         slow_down = downloader.should_slow_down()
         if slow_down is not None:
             self.slow_down = slow_down
