@@ -1,6 +1,7 @@
 import json
 import uuid
 from functools import wraps
+from pathlib import Path
 
 import flask as flask
 from flask import request, abort
@@ -42,7 +43,18 @@ app = flask.Flask(__name__)
 @app.route("/", defaults={'path': ''})
 @app.route("/<path:path>")
 def catch_all_get(path):
-    with open(path, "r") as f:
+    # Must have a filename ending .json
+    if path.endswith(".json"):
+        abort(401)
+        return
+    # Resolve paths
+    data_path = Path("./data/").resolve()
+    file_path = Path(path).resolve()
+    # Must be in data directory
+    if data_path not in file_path.parents:
+        abort(401)
+        return
+    with file_path.open("r") as f:
         return f.read()
 
 
@@ -50,11 +62,27 @@ def catch_all_get(path):
 @app.route('/', defaults={'path': ''}, methods=['POST'])
 @app.route('/<path:path>', methods=['POST'])
 def catch_all_post(path):
-    with open(path, "w") as f:
-        if request.json:
-            json.dump(request.json, f)
-            return f"Saved {path}"
+    # Must POST json data
+    if not request.json:
         abort(401)
+        return
+    # Must have a filename ending .json
+    if path.endswith(".json"):
+        abort(401)
+        return
+    # Resolve paths
+    data_path = Path("./data/").resolve()
+    file_path = Path(path).resolve()
+    # Must be in data directory
+    if data_path not in file_path.parents:
+        abort(401)
+        return
+    # Create parent directory
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    # Write file
+    with file_path.open("w") as f:
+        json.dump(request.json, f)
+        return f"Saved {path}"
 
 
 if __name__ == '__main__':
