@@ -12,7 +12,7 @@ import glob
 
 import requests
 
-VERSION = "0.1.6"
+VERSION = "0.1.7"
 USER_AGENT = f"FA indexer, trying to create a more efficient FA search function. " \
              f"Contact fa-index@spangle.org.uk, @deerspangle on telegram, or dr-spangle on FA. Version {VERSION}"
 
@@ -103,7 +103,11 @@ class WebsiteDownloader(PageGetter):
         description = main_table.select('tr')[-1].select_one('td').decode_contents().strip()
         keywords = [x.text for x in stats_container.select('div#keywords a')]
         date = parser.parse(stats_container.select_one('.popup_date')['title']).isoformat()
-        rating = stats_container.select_one('img')['alt'].replace(' rating', '')
+        rating_img = stats_container.select_one('img')
+        if rating_img is None:
+            rating = "General"
+        else:
+            rating = stats_container.select_one('img')['alt'].replace(' rating', '')
         filename = "https:" + [x['href'] for x in actions_bar.select('a') if x.text == "Download"][0]
 
         self.read_status(soup)
