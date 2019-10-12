@@ -12,6 +12,10 @@ import glob
 
 import requests
 
+VERSION = "0.1.6"
+USER_AGENT = f"FA indexer, trying to create a more efficient FA search function. " \
+             f"Contact fa-index@spangle.org.uk, @deerspangle on telegram, or dr-spangle on FA. Version {VERSION}"
+
 
 class PageResult:
     def __init__(
@@ -65,7 +69,11 @@ class WebsiteDownloader(PageGetter):
         self.over_10k_registered = False
 
     def download_page(self):
-        resp = requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie)
+        resp = requests.get(
+            f"http://furaffinity.net/view/{self.sub_id}",
+            cookies=self.login_cookie,
+            headers={"User-Agent": USER_AGENT}
+        )
         if resp.status_code == 200:
             return resp.content
         raise Exception(f"Did not receive 200 response from FA. ({resp.status_code}) submission id ({self.sub_id})")
@@ -135,7 +143,7 @@ class APIDownloader(PageGetter):
         return self.download_json(url)
 
     def download_json(self, url):
-        resp = requests.get(url)
+        resp = requests.get(url, headers={"User-Agent": USER_AGENT})
         if resp.status_code != 200:
             return None
         data = resp.json()
@@ -372,7 +380,10 @@ class Scraper:
 
     def upload_batch(self, path, full_data):
         url = self.config['UPLOAD']['URL'] + path
-        headers = {"Authorization": self.config['UPLOAD']['KEY']}
+        headers = {
+            "Authorization": self.config['UPLOAD']['KEY'],
+            "User-Agent": USER_AGENT
+        }
         requests.post(url, json=full_data, headers=headers)
 
     def scrape_batch(self, start, end):
