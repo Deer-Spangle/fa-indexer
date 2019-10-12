@@ -68,7 +68,7 @@ class WebsiteDownloader(PageGetter):
         resp = requests.get(f"http://furaffinity.net/view/{self.sub_id}", cookies=self.login_cookie)
         if resp.status_code == 200:
             return resp.content
-        raise Exception(f"Did not receive 200 response from FA. ({resp.status_code})")
+        raise Exception(f"Did not receive 200 response from FA. ({resp.status_code}) submission id ({self.sub_id})")
 
     def read_status(self, soup):
         footer = soup.select_one(".footer center").decode_contents()
