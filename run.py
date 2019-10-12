@@ -363,9 +363,17 @@ class Scraper:
 
     def save_batch(self, start_id, full_data):
         directory, filename = self.filename_for_id(start_id)
+        if "UPLOAD" in self.config:
+            self.upload_batch(directory + filename, full_data)
+            return
         self.make_directories(directory)
         with open(directory + filename, "w+") as dump_file:
             json.dump(full_data, dump_file)
+
+    def upload_batch(self, path, full_data):
+        url = self.config['UPLOAD']['URL'] + path
+        headers = {"Authorization": self.config['UPLOAD']['KEY']}
+        requests.post(url, json=full_data, headers=headers)
 
     def scrape_batch(self, start, end):
         full_data = dict()
