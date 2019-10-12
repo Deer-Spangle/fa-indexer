@@ -344,7 +344,7 @@ class Scraper:
                 result = downloader.result()
                 break
             except Exception as e:
-                print(e)
+                print(f"Exception downloading submission {sub_id}: {e}")
                 time.sleep(10)
         slow_down = downloader.should_slow_down()
         if slow_down is not None:
