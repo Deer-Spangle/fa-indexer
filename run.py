@@ -12,7 +12,7 @@ import glob
 
 import requests
 
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 USER_AGENT = f"FA indexer, trying to create a more efficient FA search function. " \
              f"Contact fa-index@spangle.org.uk, @deerspangle on telegram, or dr-spangle on FA. Version {VERSION}"
 
@@ -89,10 +89,11 @@ class WebsiteDownloader(PageGetter):
     def result(self) -> Optional[PageResult]:
         html = self.download_page()
         soup = BeautifulSoup(html, "html.parser")
-        main_table = soup.select_one('div#page-submission table.maintable table.maintable')
-        if main_table is None:
+        main_tables = soup.select('div#page-submission table.maintable table.maintable')
+        if len(main_tables) == 0:
             self.over_10k_registered = None
             return None
+        main_table = main_tables[-1]
 
         title_bar = main_table.select_one('.classic-submission-title.container')
         stats_container = main_table.select_one('td.alt1.stats-container')
