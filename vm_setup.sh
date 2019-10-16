@@ -7,7 +7,7 @@
 sudo apt install git screen python3-pip
 echo "alias s='screen -dr'" > .bash_aliases
 git clone https://github.com/joshcoales/fa-indexer
-cd fa-indexer
+cd fa-indexer || exit
 pip3 install -r requirements.txt
 cat > config.json <<- EOM
 {
