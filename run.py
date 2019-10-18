@@ -12,7 +12,7 @@ import glob
 
 import requests
 
-VERSION = "0.1.8"
+VERSION = "0.1.9"
 USER_AGENT = f"FA indexer, trying to create a more efficient FA search function. " \
              f"Contact fa-index@spangle.org.uk, @deerspangle on telegram, or dr-spangle on FA. Version {VERSION}"
 
@@ -230,8 +230,17 @@ class ArchiveTeamReader(PageGetter):
         self.file_name = file_name
 
     def result(self) -> Optional[PageResult]:
-        with open(self.file_name, "r") as archive_file:
-            html = archive_file.read()
+        encodings = ["utf-8", "cp1252", "cp850"]
+        html = None
+        for encoding in encodings:
+            try:
+                with open(self.file_name, "r", encoding=encoding) as archive_file:
+                    html = archive_file.read()
+                    break
+            except UnicodeDecodeError:
+                continue
+        if html is None:
+            raise Exception("Could not decode submission from archive team")
         soup = BeautifulSoup(html, "html.parser")
         main_table = soup.select_one('table.maintable table.maintable table.maintable')
         if main_table is None:
