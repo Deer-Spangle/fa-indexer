@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import re
@@ -12,7 +13,7 @@ import glob
 
 import requests
 
-VERSION = "0.1.9"
+VERSION = "0.2.0"
 USER_AGENT = f"FA indexer, trying to create a more efficient FA search function. " \
              f"Contact fa-index@spangle.org.uk, @deerspangle on telegram, or dr-spangle on FA. Version {VERSION}"
 
@@ -427,8 +428,34 @@ def find_latest_downloaded_id():
     return largest_id
 
 
+def format_duration(time_taken):
+    days = time_taken.days
+    hours = time_taken.seconds // 3600
+    minutes = (time_taken.seconds - (hours * 3600)) // 60
+    seconds = time_taken.seconds - (hours * 3600) - (minutes * 60)
+    return f"P{days}DT{hours}H{minutes}M{seconds}S"
+
+
 if __name__ == "__main__":
     with open("config.json", "r") as f:
         conf = json.load(f)
+    # Set start time if not set
+    if "START_TIME" not in conf:
+        conf["START_TIME"] = datetime.datetime.now().isoformat()
+        with open("config.json", "w") as f:
+            json.dump(conf, f, indent=2)
+    # Create scraper, scrape block
     scraper = Scraper(conf)
     scraper.scrape(conf['START'], conf['END'])
+    # Set end time, calculate duration, and write
+    if "END_TIME" not in conf:
+        end_time = datetime.datetime.now()
+        start_time = parser.parse(conf["START_TIME"])
+        duration = format_duration(end_time - start_time)
+        conf["END_TIME"] = end_time.isoformat()
+        conf["TIME_TAKEN"] = duration
+        with open("config.json", "w") as f:
+            json.dump(conf, f, indent=2)
+        print(f"Started block: {start_time.isoformat()}")
+        print(f"Ended block: {end_time.isoformat()}")
+        print(f"Duration: {duration}")
