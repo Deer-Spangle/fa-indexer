@@ -8,7 +8,8 @@ for file in files:
         d = json.load(f)
     for key in d.keys():
         sub = d[key]
-        users.add(sub["author"])
+        if sub is not None:
+            users.add(sub["username"])
 
 print(f"total of {len(users)} users")
 with open("users.json", "w") as f:
